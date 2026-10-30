@@ -2,3 +2,39 @@ fast-f1/venv
 fast-f1/cache
 fast-f1/data/*
 resources
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.ipynb_checkpoints/
+.pytest_cache/
+
+# FastF1 cache and extracted data (large CSVs)
+fast-f1/cache/
+*.csv
+*.ff1pkl
+
+# Node / D3 front end
+node_modules/
+dist/
+build/
+.parcel-cache/
+.vite/
+.cache/
+npm-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.npm/
+
+# Env / secrets
+.env
+.env.*
+
+# Editors / OS
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
