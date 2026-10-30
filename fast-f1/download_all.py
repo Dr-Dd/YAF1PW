@@ -8,6 +8,7 @@ import pyarrow.feather as feather
 import pandas as pd
 import os
 from pathlib import Path
+import platformdirs
 import questionary
 
 FIRST_YEAR = 2018  # FastF1 telemetry/timing is only available from 2018
@@ -112,13 +113,45 @@ def select_session(args):
     return year, int(event['RoundNumber']), event['EventName'], session_name
 
 
+NO_DATA_MESSAGE = """\
+No data was loaded for this session. Nothing was written.
+
+Look for 'Failed to authenticate' or 'Failed to load' warnings printed above.
+FastF1 3.9.0 does not stop when sign-in fails: it continues without
+authentication and load() returns nothing.
+
+Likely causes:
+  - missing or wrong F1 account credentials
+  - no active F1TV subscription (required by F1's live timing API)
+  - the session has no data available
+
+To sign in, either:
+  - set F1_USERNAME and F1_PASSWORD (or run in a terminal and FastF1 prompts), or
+  - set FASTF1_AUTH_METHOD=browser
+
+FastF1 stores its token in {token_path}
+(outside this repo; deleting cache/ does not clear it)."""
+
+
+def check_loaded(session):
+    """Exit with a helpful message if the session has no laps or no telemetry."""
+    try:
+        session.laps
+        loaded = len(session.car_data) > 0
+    except fastf1.exceptions.DataNotLoadedError:
+        loaded = False
+    if not loaded:
+        token = Path(platformdirs.user_data_dir("fastf1")) / "f1auth_token.json"
+        fail(NO_DATA_MESSAGE.format(token_path=token))
+
+
 def main():
     args = parse_args()
 
     # Enable FastF1's cache (recommended to avoid re-download)
     cache_dir = Path(__file__).parent.resolve() / 'cache'
     cache_dir.mkdir(exist_ok=True)
-    fastf1.Cache.enable_cache(str(cache_dir))
+    fastf1.Cache.configure(cache_dir=str(cache_dir))
 
     year, round_number, event_name, session_name = select_session(args)
     print(f"Loading {year} {event_name} - {session_name}")
@@ -126,6 +159,7 @@ def main():
 
     # Load all available data (laps, telemetry, weather, messages)
     session.load()
+    check_loaded(session)
 
     # ------------------------------------------------------------
     # 3. Save Car Telemetry Data (session.car_data)

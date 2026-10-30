@@ -52,4 +52,29 @@ There is no test suite. Checks used so far:
 - All three menus driven with arrow keys in a pseudo-terminal up to `session.load()`.
 
 ## Known limitations
-- A full download has not been verified end to end: in the development sandbox livetiming.formula1.com returned 401. With no data loaded, the save step raises `DataNotLoadedError` at `session.laps`. That error handling predates the menu change.
+- A full download has not been verified end to end: in the development sandbox livetiming.formula1.com returned 401. With 3.8.3 and no data loaded, the save step raised `DataNotLoadedError` at `session.laps`; see the Addendum below, which replaces that crash with an early exit and a message.
+
+---
+# Addendum (ticket 2): F1 live timing now requires sign-in
+
+## Problem
+`livetiming.formula1.com` returns 401 without an F1 account. FastF1 3.8.3 cannot sign in, so `session.load()` silently loads nothing and the script crashes at `session.laps` with `DataNotLoadedError`. Reproduced with the original script and with a bare `get_session().load()`. FastF1 3.9.0 adds sign-in; per its source it needs an active F1TV subscription.
+
+## Change
+1. `fast-f1/requirements.txt`: `fastf1==3.8.3` -> `fastf1==3.9.0`. Other pins unchanged (verified: all requirements install together with 3.9.0 in a fresh venv).
+2. `fast-f1/download_all.py`:
+   - Use `fastf1.Cache.configure(cache_dir=...)` instead of the deprecated `enable_cache`.
+   - After `session.load()`, check that data actually loaded: `session.laps` must not raise `DataNotLoadedError`, and `car_data` must be non-empty (telemetry is the point of the project). If not, exit with a message and write no files (checked before any file is written, so a failed run no longer leaves a partial `car_data.*`). The message must:
+     - say no data was loaded and point at any "Failed to authenticate" / "Failed to load" warnings printed above it (3.9.0 does not stop on a failed sign-in; it continues unauthenticated and load() returns nothing);
+     - list the likely causes: missing or wrong credentials, no active F1TV subscription, or the session simply has no data;
+     - say how to sign in: set `F1_USERNAME` and `F1_PASSWORD` (or run in a terminal and FastF1 prompts), or `FASTF1_AUTH_METHOD=browser`;
+     - note that FastF1 stores its token in the user data dir (`platformdirs.user_data_dir("fastf1")/f1auth_token.json`), outside the repo, not cleared by deleting `cache/`.
+3. `fast-f1/run.sh`: no change needed; it `exec`s Python, so `F1_USERNAME`/`F1_PASSWORD` are inherited. Credentials are never stored in the repo. (FastF1 caches its token in the user data dir.)
+
+## Not changed
+Menus, flags, output paths, save code.
+
+## Verification / limits
+- Fresh venv from the updated requirements: imports, compiles, menus and flag errors still work.
+- Without credentials: run exits cleanly with the new message, no files written.
+- Cannot verify a real sign-in or full download: no F1TV credentials in this sandbox. The user must run it with their account.
