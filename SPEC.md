@@ -1,80 +1,105 @@
-# SPEC: fast-f1 session downloader (current state)
+# SPEC (ticket 4): browser menu to fetch OpenF1 sessions as Parquet
 
-This file describes how `fast-f1/` works now. When a ticket changes that behaviour, update this file in the same commit.
+## Goal
+A local web page with three dropdowns (year, event, session) and a **Fetch** button. Pressing Fetch downloads, from the free historical OpenF1 API (`https://api.openf1.org/v1`, no key), the data the proposal (`docs/VA_projectproposal_2088501.pdf`) needs for that one session, and stores it on disk (Parquet for time series, JSON for the rest). The menu shows what is already on disk by greying out what is not.
+
+A browser cannot write to the repo, so a small Node server does the downloads and serves the page. The server is the "cache": a session counts as downloaded when its folder in `data/` passes a content check (below).
+
+## Decisions
+1. Plain JavaScript (ESM + JSDoc, no build step), as the ticket says. Type-checked with `tsc --noEmit` (`checkJs`).
+2. A local web page served by a small Node server (dropdowns, greyed items and a button imply a browser; a browser cannot write to disk, so the server does the downloads). Terminal CLI and ticket 3's TypeScript design are dropped.
+3. The earlier uncommitted ticket 3 SPEC is replaced by this file. The uncommitted deletion of `fast-f1/*` (Python loader) stays as is and is committed with this ticket's work.
+
+## Menu behaviour
+- **Year** dropdown: 2023 (first OpenF1 year) to current year, newest first.
+- **Event** dropdown: only the meetings of the selected year (testing excluded), sorted by date, shown as `Round. meeting_name`. Changing the year reloads this list and resets event and session.
+- **Session** dropdown: only the sessions of the selected event. Changing the event reloads it and resets the session.
+- Only sessions with a known name (table below) that have started (`date_start <= now`) and are not cancelled are listed. Events with none are not listed. Years with none are not listed.
+- **Greyed out** = not fully downloaded. Still selectable (the user must be able to pick it to fetch it).
+  - Session: grey unless it passes the content check.
+  - Event: grey unless **all** its listed sessions are on disk.
+  - Year: grey unless **all** events of that year are not grey.
+  - This is computed by the server from disk on every catalog request, so it updates after a fetch finishes without a page reload (the page re-requests the catalog when a job ends).
+- **Fetch** button: enabled only when a session is selected and it is not currently being fetched. Click starts the download for that session only. Shows progress ("car_data driver 1 (12/20): N rows") and a final success or error message. Fetching an already downloaded session is allowed and replaces it (the button reads "Fetch" in both cases, per the ticket).
+- Nothing is fetched on selection; only the button starts a download.
+
+## What is downloaded per session
+Derived from the proposal's needs:
+
+| Proposal need | OpenF1 endpoint | Output |
+|---|---|---|
+| Event/session identity, session start | `meetings`, `sessions` | `session.json` (taken from the catalog responses, cached 1 h for the current year and indefinitely for past years; not refetched on Fetch) |
+| Driver names, teams, numbers | `drivers` | `drivers.json` |
+| Throttle, RPM, brake/DRS, gear, speed over time | `car_data` (per driver) | `car_data.parquet` |
+| Track outline and moving dots | `location` (per driver) | `location.parquet` |
+| Lap times, sector split times | `laps` | `laps.parquet` |
+| Tyre compound, tyre age, stints | `stints` | `stints.json` |
+| Pit-in / pit-out times | `pit` | `pit.json` |
+| Weather | `weather` | `weather.json` |
+| Track state, safety car | `race_control` | `race_control.json` |
+| Top-10 / points scorers | `session_result` | `session_result.json` |
+
+Excluded for now (not in the proposal; one table row each in `endpoints.js` if wanted later): `intervals`, `position`, `team_radio`, `overtakes`, `starting_grid`, `championship_*`. 
+
+Rules (see Shared rules): dump only, every API field kept, `meeting_key`/`session_key` moved to `session.json`, extra Int32 column `t` = ms since `session.date_start`, narrowest Parquet types, every column nullable, one row group, rows sorted by driver then `t`, empty endpoint still gets a file, 404 "No results found." is zero rows, list columns kept (`laps.segments_sector_*`), per-driver requests for `car_data` and `location` (driver list = `drivers` ∪ drivers seen in `laps`).
+
+## Shared rules (fetching, format)
+- **Pacing:** sequential requests, at least 350 ms apart.
+- **Empty results:** HTTP 404 with `detail` "No results found." becomes `[]` (and is cached); any other 404 is an error.
+- **Retries:** on 429, 5xx or network error, up to 5 retries, exponential backoff from 1 s, `Retry-After` honoured.
+- **Disk cache:** every successful response stored as `loader/cache/<sha1 of URL>.json`. Used for the year catalog (`meetings`, `sessions`; 1 h for the current year, forever for past years). A Fetch click bypasses the cache for the session's data, so a retry never replays an earlier empty or partial answer.
+- **Timestamps** are ISO 8601 UTC (`2025-05-18T13:30:00.037000+00:00` or `...+00:00` without fraction).
+- **Content:** every field the API returned is kept with API names and values, except `meeting_key`/`session_key` (constant per session, kept in `session.json`). Nested arrays (`laps.segments_sector_1..3`) stay as JSON arrays / Parquet list columns.
+- **Column `t`:** every row with a timestamp (`date`, or `date_start` on `laps`) gets `t`, Int32 ms since `session.date_start` (negative before start). Parquet files store the timestamp only as `t`; JSON files keep the ISO string too.
+- **Parquet:** one file per endpoint, one row group, rows sorted by `driver_number` then `t`, every column nullable, SNAPPY if `hyparquet-writer` supports it else none (recorded in `session.json`). Types: `driver_number` u8; `rpm`, `speed`, `lap_number` i16; `n_gear`, `throttle`, `brake`, `drs` i8; `x`, `y`, `z`, `t` i32; decimals (lap/sector durations) f64; speed traps (`i1_speed`, `i2_speed`, `st_speed`) i16 (the API gives integers; a non-integer value widens the column to f64); other fields by value.
+- **Every endpoint gets a file**, even with 0 rows (empty array, or schema-only Parquet).
+- **Session abbreviations:** Practice 1/2/3 = FP1/FP2/FP3, Qualifying = Q, Sprint Qualifying = SQ, Sprint Shootout = SS, Sprint = S, Race = R.
+- **Folder:** `data/<year>/<round:02d>-<meeting slug>/<abbr>/`, round = 1-based index of the year's non-testing meetings by `date_start`, slug = lowercase name with non-alphanumerics as `-` (e.g. `data/2025/07-emilia-romagna-grand-prix/R/`). Written to `<folder>.tmp`, renamed at the end; a failed fetch leaves nothing. Re-fetching replaces the folder.
+- **`session.json`:** `schema_version: 1`, `generated_at`, `source: "openf1"`, `meeting`, `session` (raw API objects), `round`, `abbreviation`, `date_start_ms`, `parquet_compression`, `files` (`{name: row_count}`).
+
+## Output layout
+See Shared rules. **Content check** (`verifySession`): `session.json` parses with `schema_version` 1, and every file in its `files` map exists and its row count matches (JSON: array length; Parquet: footer row count via `hyparquet`), and no extra expected endpoint file is missing. Anything else (missing, truncated, corrupt, stale `.tmp`) means not downloaded. `/data/` is gitignored.
+
+## Server API (`loader/src/server.js`, Node `http`, no framework, binds 127.0.0.1)
+- `GET /` and static files from `loader/public/`.
+- `GET /api/catalog` returns `[{year, cached, events:[{meeting_key, round, name, cached, sessions:[{session_key, name, abbr, cached}]}]}]`. Built from `meetings?year=Y` and `sessions?year=Y` for each year, cached on disk in `loader/cache/` (permanent for past years, 1 h for the current year), plus a scan of `data/`.
+- `POST /api/fetch` body `{session_key}`: starts a job, returns `{jobId}`. 409 if that session is already running; 400 if the session is not in the catalog (unknown, future or cancelled). One job at a time overall (OpenF1 pacing): a second request while busy gets 409.
+- `GET /api/jobs/:id` returns `{state: running|done|error, progress, error?}`; the page polls it every 500 ms.
+
+The "no data yet" case (laps and all car_data empty) is an error and leaves nothing on disk.
 
 ## Files
-- `fast-f1/download_all.py`: downloads one FastF1 session and saves it.
-- `fast-f1/run.sh`: runs the script inside a project-local virtual environment.
-- `fast-f1/requirements.txt`: pinned dependencies (includes `questionary`, `prompt_toolkit`, `wcwidth` for the menus).
-- Git-ignored: `fast-f1/venv`, `fast-f1/cache`, `*.csv`, `*.ff1pkl`.
+New:
+- `loader/package.json` (ESM, scripts `start`, `test`, `lint`; `engines.node >= 22`), deps `hyparquet-writer`, `hyparquet` (tests + post-write check); dev `eslint`, `@eslint/js`, `typescript` + `// @ts-check` with `tsc --noEmit` and `checkJs` for type checking.
+- `loader/src/server.js`, `catalog.js` (pure: build tree, cached flags), `api.js` (fetch wrapper), `endpoints.js`, `write.js`, `download.js` (one session).
+- `loader/public/index.html`, `menu.js` (DOM), `menu-state.js` (pure: filtering and grey state), `menu.css`.
+- `loader/test/*.test.js`, fixtures in `loader/test/fixtures/` (small trimmed real responses).
+- `.gitignore`: add `loader/cache/`, `/data/`; drop the Python lines.
 
 ## Running
 ```sh
-./fast-f1/run.sh                                        # interactive menus
-./fast-f1/run.sh --year 2025 --event Imola --session R  # non-interactive
-PYTHON=python3.12 ./fast-f1/run.sh                      # interpreter used to create the venv
-rm -rf fast-f1/venv                                     # reset the environment
+cd loader && npm install && npm start      # http://127.0.0.1:3000
 ```
 
-### `run.sh`
-- Works from any CWD (paths resolve from the script's own directory).
-- If `fast-f1/venv/bin/python` is missing, it creates the venv with `${PYTHON:-python3} -m venv` and clears the install stamp.
-- It installs `requirements.txt` with the venv's pip only when the file's sha256 differs from `venv/.requirements.sha256`. The stamp is written only after pip succeeds.
-- Then `exec venv/bin/python download_all.py "$@"`: flags, exit code and TTY pass through.
-- It uses `set -euo pipefail`, so a failed venv creation or install aborts with a non-zero exit.
-- Nothing is installed into the system Python.
+## How we know it works
+`npm test`, `npm run typecheck`, `npm run lint` pass in `loader/`. Unit tests:
+- **Grey logic:** session cached only when the content check passes (truncated Parquet, wrong row count, missing file, corrupt JSON all fail); event cached only if all sessions are; year only if all events are; partial cases stay grey; unstarted/cancelled/testing excluded; year and event filtering of the lists.
+- **Fetch wrapper:** 404 empty gives `[]` and is cached; other 404 throws; 429 retry with `Retry-After`; 350 ms spacing; cache hit does no request.
+- **Writers:** Parquet round trip per fixture (values, nulls, list columns, ); empty endpoint writes schema-only file; `t` correct incl. negative; JSON rows equal input minus keys plus `t`.
+- **Server:** with mocked OpenF1, `/api/catalog` flags flip after a fetch job completes; double-fetch gives 409; unknown session gives 400; failed job leaves no folder.
 
-### `download_all.py`
-Three arrow-key menus (`questionary`) pick what to download, in order:
-1. **Year**: current year down to 2018.
-2. **Event**: `fastf1.get_event_schedule(year, include_testing=False)`, shown as `RoundNumber. EventName`. Only events with at least one session already started (UTC).
-3. **Session**: the event's `Session1..Session5` names, skipping empty ones and any not yet started (UTC).
+Live check, recorded here when done: start the server; open the page with a headless browser or `curl` on the API; Fetch 2025 Imola Race; confirm the files exist, the Parquet files read back with `hyparquet` (VER about 33k `car_data` rows), session/event/year flags become un-grey as sessions complete (check the event flag by fetching all its sessions on a sprint-less weekend, or by seeding fixture folders), and a second page load shows the same state.
 
-Flags `--year`, `--event`, `--session` skip the matching menu:
-- Event: exact name (case-insensitive) or round number; otherwise a unique substring.
-- Session: name (case-insensitive) or abbreviation (FP1, FP2, FP3, Q, SQ, SS, S, R).
-- Invalid value: exits 1 with an error listing the valid choices.
-- A menu is needed but stdin is not a TTY: exits 1 with an error (no hang).
-- A given flag still constrains the later menus.
+## Resolved questions
+1. The 10-endpoint subset is accepted for now.
+2. This ticket's commit includes the `fast-f1/*` deletions.
+3. "Downloaded" means the content check passes, not just that a file exists.
 
-Then it loads the session and writes `car_data`, `laps`, `pos_data` and `weather_data` as `.arrow` (Feather) and `.csv` into `fast-f1/`. Each run overwrites them (one session at a time, no per-event folders). The FastF1 cache is `fast-f1/cache`, created if missing.
-
-## Decisions
-Years 2018+; hide future events/sessions; arrow-key menus plus non-interactive flags; one session's output at a time; project-local venv instead of system packages.
-
-## Verification
-There is no test suite. Checks used so far:
-- `bash -n` and `shellcheck` on `run.sh`; `py_compile` on `download_all.py`.
-- `run.sh --help` from the repo root and from another directory.
-- Install skipped on a repeat run, and re-run after `requirements.txt` changes.
-- System `pip list` unchanged after a run.
-- Invalid flags give errors with valid choices, e.g. `run.sh --year 1990 </dev/null` exits 1.
-- All three menus driven with arrow keys in a pseudo-terminal up to `session.load()`.
-
-## Known limitations
-- A full download has not been verified end to end: in the development sandbox livetiming.formula1.com returned 401. With 3.8.3 and no data loaded, the save step raised `DataNotLoadedError` at `session.laps`; see the Addendum below, which replaces that crash with an early exit and a message.
-
----
-# Addendum (ticket 2): F1 live timing now requires sign-in
-
-## Problem
-`livetiming.formula1.com` returns 401 without an F1 account. FastF1 3.8.3 cannot sign in, so `session.load()` silently loads nothing and the script crashes at `session.laps` with `DataNotLoadedError`. Reproduced with the original script and with a bare `get_session().load()`. FastF1 3.9.0 adds sign-in; per its source it needs an active F1TV subscription.
-
-## Change
-1. `fast-f1/requirements.txt`: `fastf1==3.8.3` -> `fastf1==3.9.0`. Other pins unchanged (verified: all requirements install together with 3.9.0 in a fresh venv).
-2. `fast-f1/download_all.py`:
-   - Use `fastf1.Cache.configure(cache_dir=...)` instead of the deprecated `enable_cache`.
-   - After `session.load()`, check that data actually loaded: `session.laps` must not raise `DataNotLoadedError`, and `car_data` must be non-empty (telemetry is the point of the project). If not, exit with a message and write no files (checked before any file is written, so a failed run no longer leaves a partial `car_data.*`). The message must:
-     - say no data was loaded and point at any "Failed to authenticate" / "Failed to load" warnings printed above it (3.9.0 does not stop on a failed sign-in; it continues unauthenticated and load() returns nothing);
-     - list the likely causes: missing or wrong credentials, no active F1TV subscription, or the session simply has no data;
-     - say how to sign in: set `F1_USERNAME` and `F1_PASSWORD` (or run in a terminal and FastF1 prompts), or `FASTF1_AUTH_METHOD=browser`;
-     - note that FastF1 stores its token in the user data dir (`platformdirs.user_data_dir("fastf1")/f1auth_token.json`), outside the repo, not cleared by deleting `cache/`.
-3. `fast-f1/run.sh`: no change needed; it `exec`s Python, so `F1_USERNAME`/`F1_PASSWORD` are inherited. Credentials are never stored in the repo. (FastF1 caches its token in the user data dir.)
-
-## Not changed
-Menus, flags, output paths, save code.
-
-## Verification / limits
-- Fresh venv from the updated requirements: imports, compiles, menus and flag errors still work.
-- Without credentials: run exits cleanly with the new message, no files written.
-- Cannot verify a real sign-in or full download: no F1TV credentials in this sandbox. The user must run it with their account.
+## Live check results (done)
+- Server started on 127.0.0.1; `/api/catalog` returned 2026-2023 (19/24/24/22 events) in 2.5 s.
+- Fetch 2025 Emilia Romagna GP Race: 55 requests, all 9 endpoint files plus `session.json`; sizes: `car_data.parquet` 4.4 MB (662,460 rows), `location.parquet` 4.9 MB (679,580 rows), `laps.parquet` 45 KB (1,207 rows), JSON files under 30 KB each.
+- Read back with `hyparquet` (Node): `car_data` 662,460 rows in 0.87 s; VER 33,123 `car_data`, 33,979 `location`, 63 laps; 20 drivers.
+- Catalog after the fetch: only `R` un-grey; event and all years stay grey (other sessions missing). Event/year flip is covered by the server test that fetches every session of the mocked year.
+- Headless Chromium `--dump-dom` of the page: the year dropdown is populated from the catalog with all years greyed (`class="grey"`). Clicking through the dropdowns and the Fetch button in a browser was not automated; that DOM logic is covered only by the pure `menu-state` tests.
+- Second load: after restarting the server and loading the page in headless Chromium, `/api/catalog` still shows Imola `R` un-grey and FP1/FP2/FP3/Q grey (state comes from disk).
+- Fixtures in `loader/test/fixtures/` are trimmed real Imola 2025 Race rows (`car_data`, `location`, `laps`) and are round-tripped through Parquet in `write.test.js`.

@@ -1,20 +1,6 @@
-fast-f1/venv
-fast-f1/cache
-fast-f1/data/*
 resources
-
-# Python
-__pycache__/
-*.py[cod]
-.venv/
-venv/
-.ipynb_checkpoints/
-.pytest_cache/
-
-# FastF1 cache and extracted data (large CSVs)
-fast-f1/cache/
-*.csv
-*.ff1pkl
+.review/
+SPEC.md
 
 # Node / D3 front end
 node_modules/
@@ -38,3 +24,7 @@ pnpm-debug.log*
 *.swp
 .DS_Store
 Thumbs.db
+
+# Downloaded OpenF1 data and request cache
+/data/
+loader/cache/
