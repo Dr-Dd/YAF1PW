@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { canFetch, eventOptions, keepSelection, sessionOptions, yearOptions } from '../public/menu-state.js'
+import { canFetch, eventOptions, keepSelection, optionText, sessionOptions, yearOptions } from '../public/menu-state.js'
 
 const sess = (key, abbr, cached) => ({ session_key: key, name: abbr, abbr, cached })
 const catalog = [
@@ -35,4 +35,9 @@ test('selection is kept only if still offered; fetch needs a session and no job'
   assert.equal(canFetch(null, false), false)
   assert.equal(canFetch(3, true), false)
   assert.equal(canFetch(3, false), true)
+})
+
+test('optionText marks downloaded and grey items', () => {
+  assert.equal(optionText({ label: 'X', grey: false }), '● X')
+  assert.equal(optionText({ label: 'X', grey: true }), '○ X')
 })

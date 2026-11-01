@@ -1,4 +1,4 @@
-import { canFetch, eventOptions, keepSelection, sessionOptions, yearOptions } from './menu-state.js'
+import { canFetch, eventOptions, keepSelection, optionText, sessionOptions, yearOptions } from './menu-state.js'
 
 const $ = (/** @type {string} */ id) => document.getElementById(id)
 const yearEl = /** @type {HTMLSelectElement} */ ($('year'))
@@ -20,7 +20,7 @@ function fill(el, options, value, placeholder) {
   ph.disabled = false
   el.append(ph)
   for (const o of options) {
-    const opt = new Option(o.label, String(o.value))
+    const opt = new Option(optionText(o), String(o.value))
     if (o.grey) opt.classList.add('grey')
     el.append(opt)
   }

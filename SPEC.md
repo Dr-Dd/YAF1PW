@@ -103,3 +103,24 @@ Live check, recorded here when done: start the server; open the page with a head
 - Headless Chromium `--dump-dom` of the page: the year dropdown is populated from the catalog with all years greyed (`class="grey"`). Clicking through the dropdowns and the Fetch button in a browser was not automated; that DOM logic is covered only by the pure `menu-state` tests.
 - Second load: after restarting the server and loading the page in headless Chromium, `/api/catalog` still shows Imola `R` un-grey and FP1/FP2/FP3/Q grey (state comes from disk).
 - Fixtures in `loader/test/fixtures/` are trimmed real Imola 2025 Race rows (`car_data`, `location`, `laps`) and are round-tripped through Parquet in `write.test.js`.
+
+---
+
+# Ticket 5: grey state visible inside the open dropdown
+
+## Pre-existing failures
+none (`npm test` 32 pass, `typecheck` and `lint` clean).
+
+## Problem
+The grey state is only CSS `color` on `<option class="grey">`. Browsers/OSes that render the native popup ignore option styling, so in the open list every item is black on white and downloaded vs. not cannot be told apart. Only the closed select (which has `select.grey`) shows it.
+
+## Change
+Make the state part of the option **text**, which every popup renders, and keep the colour as extra hint.
+- `loader/public/menu-state.js`: new pure `optionText(o)` returning `"● " + label` when downloaded and `"○ " + label` when grey (matched glyph pair from one family, so labels stay aligned). Placeholder unchanged.
+- `loader/public/menu.js` `fill`: use `optionText(o)` for the option text.
+- `loader/public/menu.css`: give `option` an explicit `background: Canvas; color: CanvasText` and keep `option.grey { color: #999 }`, so browsers that do honour option styling also show it reliably.
+- `loader/public/index.html`: short legend under the dropdowns: "● downloaded, ○ not (fully) downloaded".
+- `loader/test/menu-state.test.js`: test `optionText` for both states. `label` values stay unchanged, so existing tests are untouched.
+
+## How we know it works
+`npm test`, `npm run typecheck`, `npm run lint` pass. Open dropdowns can't be screenshotted by headless Chromium (native popup), so the visible text marker is verified by the unit test plus a headless `--dump-dom` showing the `●`/`○` prefixes in the option text.

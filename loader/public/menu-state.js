@@ -23,6 +23,11 @@ export function sessionOptions(catalog, year, meetingKey) {
   return (e?.sessions ?? []).map((s) => ({ value: s.session_key, label: `${s.name} (${s.abbr})`, grey: !s.cached }))
 }
 
+/** Visible text of an option: the marker survives native popups that ignore CSS. @param {{ label: string, grey: boolean }} o */
+export function optionText(o) {
+  return `${o.grey ? '○' : '●'} ${o.label}`
+}
+
 /** Keep a selection only if it is still offered. @param {{ value: number }[]} options @param {number | null} value */
 export function keepSelection(options, value) {
   return options.some((o) => o.value === value) ? value : null
