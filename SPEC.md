@@ -124,3 +124,35 @@ Make the state part of the option **text**, which every popup renders, and keep 
 
 ## How we know it works
 `npm test`, `npm run typecheck`, `npm run lint` pass. Open dropdowns can't be screenshotted by headless Chromium (native popup), so the visible text marker is verified by the unit test plus a headless `--dump-dom` showing the `●`/`○` prefixes in the option text.
+
+---
+
+# Ticket 6: partial marker for partly downloaded years/events
+
+## Pre-existing failures
+none (`npm test` 33 pass, `typecheck` and `lint` clean).
+
+## Problem
+Years and events show only `●` (fully downloaded) or `○` (not fully downloaded). An event with some sessions on disk looks the same as one with none.
+
+## Change
+Add a third state, **partial**, shown with `◐` (U+25D0, same Geometric Shapes family as `●`/`○`, so labels stay aligned).
+- **Event** is partial when it is not fully downloaded but at least one of its sessions is.
+- **Year** is partial when it is not fully downloaded but at least one session of any of its events is.
+- **Session** stays two-state (a session is downloaded as a whole or not at all).
+- Partial items keep the grey colour (they are still not fully downloaded); only the marker differs.
+
+Computed client-side from the existing catalog (session `cached` flags are already sent), so the server API and `catalog.js` are unchanged.
+
+Files:
+- `loader/public/menu-state.js`: `yearOptions`/`eventOptions` add `partial: boolean` to each option (sessionOptions sets `partial: false`); `optionText` returns `◐ label` when `partial`, else `●`/`○` as before.
+- `loader/public/menu.js`: no change needed (`fill` already uses `optionText`; grey class unchanged). Will touch only if typing requires.
+- `loader/public/index.html`: legend becomes "● downloaded, ◐ partly downloaded, ○ not downloaded".
+- `loader/test/menu-state.test.js`: tests for partial on years and events (none / some / all sessions cached), and `optionText` for the partial marker.
+
+## How we know it works
+`npm test`, `npm run typecheck`, `npm run lint` pass in `loader/`. New unit tests cover: event with some sessions cached → partial; with none → not partial, grey; with all → not partial, not grey; year partial when any event has any cached session, not partial when fully cached or nothing cached. Headless `--dump-dom` against the live data (Imola 2025 R is on disk) shows `◐` on 2025 and on the Emilia Romagna event.
+
+## Live check results (done)
+- `npm test` 35 pass; typecheck and lint clean.
+- Headless Chromium `--dump-dom` against live data (only 2025 Imola R on disk): year options `○ 2026`, `◐ 2025`, `○ 2024`, `○ 2023`. Event options for 2025 (via `eventOptions` on the live `/api/catalog`): only `◐ 7. Emilia Romagna Grand Prix` is not `○`.
