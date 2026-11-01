@@ -91,5 +91,22 @@ fetchEl.addEventListener('click', async () => {
   }
 })
 
+const toggleEl = /** @type {HTMLButtonElement} */ ($('menu-toggle'))
+const panelEl = /** @type {HTMLElement} */ ($('menu-panel'))
+
+/** Show or hide the menu panel; menu state is untouched. */
+function setMenuOpen(open) {
+  panelEl.hidden = !open
+  toggleEl.setAttribute('aria-expanded', String(open))
+}
+toggleEl.addEventListener('click', () => setMenuOpen(panelEl.hidden))
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && !panelEl.hidden) { setMenuOpen(false); toggleEl.focus() }
+})
+document.addEventListener('click', (e) => {
+  const t = /** @type {Node} */ (e.target)
+  if (!panelEl.hidden && !panelEl.contains(t) && !toggleEl.contains(t)) setMenuOpen(false)
+})
+
 setStatus('Loading catalog...')
 loadCatalog().then(() => setStatus('')).catch((e) => setStatus(`Error: ${e.message}`, true))

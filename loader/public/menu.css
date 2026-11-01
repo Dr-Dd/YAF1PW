@@ -8,11 +8,19 @@
   --muted: #94a3b8;
   --error: #fb7185;
 }
-body { font-family: system-ui, sans-serif; margin: 2rem; background: var(--bg); color: var(--text); }
+body { font-family: system-ui, sans-serif; margin: 0; background: var(--bg); color: var(--text); }
+#topbar { position: fixed; top: 0; left: 0; right: 0; display: flex; align-items: center; gap: .8rem; padding: .6rem 1rem; background: var(--bg); border-bottom: 1px solid var(--border); z-index: 10; }
+#topbar h1 { margin: 0; font-size: 1.3rem; }
+#menu-toggle { margin: 0; padding: .2rem .6rem; font-size: 1.4rem; line-height: 1; }
+#menu-panel { position: fixed; top: 3.4rem; left: 1rem; padding: .6rem 1.2rem; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; box-shadow: 0 8px 24px rgb(0 0 0 / .5); z-index: 20; }
+#menu-panel[hidden] { display: none; }
+main { padding: 4.5rem 2rem 2rem; }
 label { display: block; margin: .6rem 0; }
 select, button { background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: 4px; }
 select { min-width: 22rem; padding: .3rem; margin-left: .5rem; }
 option { background: var(--surface); color: var(--text); }
+#menu-panel select, #menu-panel button { background: var(--bg); }
+#menu-panel button:hover:not(:disabled) { background: var(--surface-hover); }
 option.grey { color: var(--muted); }
 select.grey { color: var(--muted); }
 button { padding: .4rem 1.2rem; margin-top: .6rem; cursor: pointer; }

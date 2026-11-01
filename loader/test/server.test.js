@@ -162,3 +162,17 @@ test('static page is served and path traversal blocked', async () => {
     assert.notEqual(bad.status, 200)
   } finally { s.close() }
 })
+
+test('menu controls sit inside a hidden panel opened by a top-left hamburger', async () => {
+  const s = await start(mockFetch(route))
+  try {
+    const html = await (await fetch(s.base + '/')).text()
+    const toggle = html.match(/<button id="menu-toggle"[^>]*>/)?.[0] ?? ''
+    assert.match(toggle, /aria-controls="menu-panel"/)
+    assert.match(toggle, /aria-expanded="false"/)
+    const panel = html.match(/<div id="menu-panel" hidden>([\s\S]*?)<\/div>/)
+    assert.ok(panel, 'panel present and hidden on load')
+    for (const id of ['year', 'event', 'session', 'legend', 'fetch', 'status']) assert.match(panel[1], new RegExp(`id="${id}"`))
+    assert.ok(html.indexOf('id="menu-toggle"') < html.indexOf('<h1>'), 'hamburger comes before the title (left side)')
+  } finally { s.close() }
+})

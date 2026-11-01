@@ -6,15 +6,19 @@
   <link rel="stylesheet" href="menu.css">
 </head>
 <body>
-  <main>
+  <header id="topbar">
+    <button id="menu-toggle" type="button" aria-label="Menu" aria-controls="menu-panel" aria-expanded="false">☰</button>
     <h1>OpenF1 data</h1>
+  </header>
+  <div id="menu-panel" hidden>
     <label>Year <select id="year"></select></label>
     <label>Event <select id="event"></select></label>
     <label>Session <select id="session"></select></label>
     <p id="legend">● downloaded, ◐ partly downloaded, ○ not downloaded</p>
     <button id="fetch" type="button">Fetch</button>
     <p id="status" role="status"></p>
-  </main>
+  </div>
+  <main></main>
   <script type="module" src="menu.js"></script>
 </body>
 </html>
