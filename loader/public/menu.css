@@ -1,9 +1,22 @@
-body { font-family: system-ui, sans-serif; margin: 2rem; }
+:root {
+  color-scheme: dark;
+  --bg: #0f172b;
+  --surface: #1e293b;
+  --surface-hover: #334155;
+  --border: #475569;
+  --text: #e2e8f0;
+  --muted: #94a3b8;
+  --error: #fb7185;
+}
+body { font-family: system-ui, sans-serif; margin: 2rem; background: var(--bg); color: var(--text); }
 label { display: block; margin: .6rem 0; }
+select, button { background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: 4px; }
 select { min-width: 22rem; padding: .3rem; margin-left: .5rem; }
-option { background: Canvas; color: CanvasText; }
-option.grey { color: #999; }
-select.grey { color: #999; }
-button { padding: .4rem 1.2rem; margin-top: .6rem; }
-#status.error { color: #b00020; }
-#legend { color: #555; font-size: .9rem; }
+option { background: var(--surface); color: var(--text); }
+option.grey { color: var(--muted); }
+select.grey { color: var(--muted); }
+button { padding: .4rem 1.2rem; margin-top: .6rem; cursor: pointer; }
+button:hover:not(:disabled) { background: var(--surface-hover); }
+select:disabled, button:disabled { opacity: .5; cursor: default; }
+#status.error { color: var(--error); }
+#legend { color: var(--muted); font-size: .9rem; }
