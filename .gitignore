@@ -39,3 +39,7 @@ __pycache__/
 .venv/
 venv/
 coverage/
+
+# Pi-installed packages
+.pi/git/
+.pi/npm/
