@@ -28,3 +28,14 @@ Thumbs.db
 # Downloaded OpenF1 data and request cache
 /data/
 loader/cache/
+
+# Added from default-template
+!.env.example
+*~
+*.log
+*.tmp
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+coverage/
