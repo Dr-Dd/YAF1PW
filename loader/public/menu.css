@@ -28,3 +28,9 @@ button:hover:not(:disabled) { background: var(--surface-hover); }
 select:disabled, button:disabled { opacity: .5; cursor: default; }
 #status.error { color: var(--error); }
 #legend { color: var(--muted); font-size: .9rem; }
+.preview-table { overflow-x: auto; margin-bottom: 1rem; }
+.preview-table table { border-collapse: collapse; font-size: .85rem; }
+.preview-table th, .preview-table td { border: 1px solid var(--border); padding: .2rem .5rem; text-align: left; white-space: nowrap; }
+.preview-table th { background: var(--surface); }
+main h3 { margin: 1.2rem 0 .4rem; font-size: 1rem; }
+main pre { background: var(--surface); padding: .6rem; overflow-x: auto; }

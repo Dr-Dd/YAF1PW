@@ -5,8 +5,9 @@ import { dirname, extname, join, normalize } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { randomUUID } from 'node:crypto'
 import { createClient } from './api.js'
-import { applyCached, buildYear, scanCached, yearRange } from './catalog.js'
+import { applyCached, buildYear, scanCached, verifySession, yearRange } from './catalog.js'
 import { downloadSession } from './download.js'
+import { previewSession } from './preview.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const HOUR = 3600_000
@@ -17,6 +18,7 @@ const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; ch
  * @param {string} [o.dataDir] @param {string} [o.cacheDir] @param {string} [o.publicDir]
  * @param {typeof fetch} [o.fetchFn] @param {() => number} [o.now] @param {number} [o.minGapMs]
  * @param {string} [o.baseUrl] @param {number} [o.backoffMs]
+ * @param {typeof previewSession} [o.previewFn] (tests: hook into the preview read)
  */
 export function createApp(o = {}) {
   const dataDir = o.dataDir ?? join(here, '..', '..', 'data')
@@ -32,6 +34,10 @@ export function createApp(o = {}) {
   /** @type {Map<string, { state: string, progress: string, error?: string, session_key: number }>} */
   const jobs = new Map()
   let running = null
+  /** Fetches started per session; a preview discards its result if this changed while it was reading. */
+  /** @type {Map<number, number>} */
+  const fetchStarts = new Map()
+  const previewFn = o.previewFn ?? previewSession
 
   async function catalog() {
     const nowMs = now()
@@ -83,6 +89,7 @@ export function createApp(o = {}) {
         if (!target) return json(res, 400, { error: 'unknown, unstarted or cancelled session' })
         if (running) return json(res, 409, { error: running === sessionKey ? 'already fetching this session' : 'another fetch is running' })
         running = sessionKey
+        fetchStarts.set(sessionKey, (fetchStarts.get(sessionKey) ?? 0) + 1)
         const id = randomUUID()
         const job = { state: 'running', progress: 'starting', session_key: sessionKey }
         jobs.set(id, job)
@@ -91,6 +98,29 @@ export function createApp(o = {}) {
           .catch((e) => { job.state = 'error'; job.error = e.message })
           .finally(() => { running = null })
         return json(res, 202, { jobId: id })
+      }
+      if (req.method === 'GET' && url.pathname === '/api/preview') {
+        const raw = url.searchParams.get('session_key')
+        const sessionKey = raw === null || raw === '' ? NaN : Number(raw)
+        if (!Number.isInteger(sessionKey)) return json(res, 400, { error: 'session_key required' })
+        const rowsParam = Number(url.searchParams.get('rows') ?? 10)
+        const n = Number.isInteger(rowsParam) ? Math.min(100, Math.max(1, rowsParam)) : 10
+        if (!known.has(sessionKey)) await catalog()
+        const target = known.get(sessionKey)
+        if (!target) return json(res, 400, { error: 'unknown, unstarted or cancelled session' })
+        const busy = () => json(res, 409, { error: 'session is being fetched' })
+        if (running === sessionKey) return busy()
+        const starts = fetchStarts.get(sessionKey) ?? 0
+        const raced = () => running === sessionKey || (fetchStarts.get(sessionKey) ?? 0) !== starts
+        let body
+        try {
+          if (!(await verifySession(dataDir, target.dir))) return raced() ? busy() : json(res, 409, { error: 'session not downloaded' })
+          body = await previewFn(dataDir, target.dir, n)
+        } catch (e) {
+          if (raced()) return busy()
+          throw e
+        }
+        return raced() ? busy() : json(res, 200, body)
       }
       const m = url.pathname.match(/^\/api\/jobs\/([\w-]+)$/)
       if (req.method === 'GET' && m) {

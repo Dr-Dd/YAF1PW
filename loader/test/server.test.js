@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { parquetMetadata } from 'hyparquet'
 import { readFile } from 'node:fs/promises'
 import { createApp } from '../src/server.js'
+import { previewSession } from '../src/preview.js'
 import { mockFetch, NO_RESULTS, ok, tmp } from './helpers.js'
 
 const NOW = Date.parse('2025-06-01T00:00:00Z')
@@ -38,9 +39,9 @@ function route(url) {
   return NO_RESULTS
 }
 
-async function start(fetchFn) {
+async function start(fetchFn, extra = {}) {
   const dataDir = await tmp()
-  const { server } = createApp({ dataDir, cacheDir: await tmp(), fetchFn, now: () => NOW, minGapMs: 0, backoffMs: 0 })
+  const { server } = createApp({ dataDir, cacheDir: await tmp(), fetchFn, now: () => NOW, minGapMs: 0, backoffMs: 0, ...extra })
   await new Promise((r) => server.listen(0, '127.0.0.1', r))
   const base = `http://127.0.0.1:${server.address().port}`
   const get = async (p) => (await fetch(base + p)).json()
@@ -174,5 +175,119 @@ test('menu controls sit inside a hidden panel opened by a top-left hamburger', a
     assert.ok(panel, 'panel present and hidden on load')
     for (const id of ['year', 'event', 'session', 'legend', 'fetch', 'status']) assert.match(panel[1], new RegExp(`id="${id}"`))
     assert.ok(html.indexOf('id="menu-toggle"') < html.indexOf('<h1>'), 'hamburger comes before the title (left side)')
+  } finally { s.close() }
+})
+
+test('preview: refused before download, random sample after, never fetches data', async () => {
+  const f = mockFetch(route)
+  const s = await start(f)
+  const status = async (q) => (await fetch(`${s.base}/api/preview${q}`)).status
+  try {
+    assert.equal(await status(''), 400)
+    assert.equal(await status('?session_key=abc'), 400)
+    assert.equal(await status('?session_key=12345'), 400)
+    const before = f.calls.length
+    assert.equal(await status('?session_key=21'), 409)
+    assert.ok(f.calls.slice(before).every((c) => /\/(meetings|sessions)\?/.test(c.url)), 'no session-data requests')
+
+    assert.equal((await s.runJob(21)).state, 'done')
+    const callsAfterDownload = f.calls.length
+    const p = await s.get('/api/preview?session_key=21')
+    assert.equal(f.calls.length, callsAfterDownload)
+    assert.equal(p.dir, '2025/01-australian-grand-prix/R')
+    assert.equal(p.meta.files, undefined)
+    assert.equal(p.meta.session.session_key, 21)
+    assert.deepEqual(p.tables.map((t) => t.file), ['drivers.json', 'car_data.parquet', 'location.parquet', 'laps.parquet',
+      'stints.json', 'pit.json', 'weather.json', 'race_control.json', 'session_result.json'])
+    const meta = JSON.parse(await readFile(join(s.dataDir, p.dir, 'session.json'), 'utf8'))
+    for (const t of p.tables) {
+      assert.equal(t.total, meta.files[t.file], t.file)
+      assert.equal(t.rows.length, t.total, `${t.file}: rows >= total returns all`)
+      assert.equal(t.columns[0], '_row')
+    }
+    const car = p.tables[1]
+    assert.deepEqual(car.rows.map((r) => r._row), [0, 1])
+    assert.ok(car.columns.includes('t') && car.columns.includes('driver_number') && car.columns.includes('rpm'))
+    assert.deepEqual(car.rows.map((r) => r.driver_number), [1, 4])
+    const laps = p.tables[3]
+    assert.deepEqual(laps.rows[0].segments_sector_1, [2048])
+
+    const one = await s.get('/api/preview?session_key=21&rows=1')
+    const c1 = one.tables[1]
+    assert.equal(c1.rows.length, 1)
+    assert.equal(c1.total, 2)
+    assert.deepEqual(c1.rows[0], car.rows[c1.rows[0]._row])
+    assert.equal((await s.get('/api/preview?session_key=21&rows=0')).tables[1].rows.length, 1) // clamped to 1
+
+    const { truncate } = await import('node:fs/promises')
+    await truncate(join(s.dataDir, p.dir, 'laps.parquet'), 8)
+    assert.equal(await status('?session_key=21'), 409)
+  } finally { s.close() }
+})
+
+test('View data button sits in the menu panel', async () => {
+  const s = await start(mockFetch(route))
+  try {
+    const html = await (await fetch(s.base + '/')).text()
+    const panel = html.match(/<div id="menu-panel" hidden>([\s\S]*?)<\/div>/)
+    assert.match(panel?.[1] ?? '', /<button id="preview"[^>]*>View data<\/button>/)
+  } finally { s.close() }
+})
+
+test('preview: refused while that session is being re-fetched, other sessions unaffected', async () => {
+  let gated = false
+  let release = () => {}
+  const f = mockFetch(async (url) => {
+    if (gated && url.includes('/laps')) await new Promise((r) => { release = r })
+    return route(url)
+  })
+  const s = await start(f)
+  try {
+    await s.get('/api/catalog')
+    for (const k of [20, 21]) assert.equal((await s.runJob(k)).state, 'done')
+    gated = true
+    const res = await s.post('/api/fetch', { session_key: 21 })
+    assert.equal(res.status, 202)
+    const busy = await fetch(`${s.base}/api/preview?session_key=21`)
+    assert.equal(busy.status, 409)
+    assert.match((await busy.json()).error, /being fetched/)
+    assert.equal((await fetch(`${s.base}/api/preview?session_key=20`)).status, 200)
+    gated = false
+    release()
+    const { jobId } = await res.json()
+    for (;;) {
+      const j = await s.get(`/api/jobs/${jobId}`)
+      if (j.state !== 'running') { assert.equal(j.state, 'done', j.error); break }
+      await new Promise((r) => setTimeout(r, 10))
+    }
+    assert.equal((await fetch(`${s.base}/api/preview?session_key=21`)).status, 200)
+  } finally { release(); s.close() }
+})
+
+test('preview: discarded (409) if a fetch of that session starts while it is reading', async () => {
+  let onRead = async () => {}
+  const previewFn = async (...a) => { await onRead(); return previewSession(...a) }
+  const s = await start(mockFetch(route), { previewFn })
+  try {
+    await s.get('/api/catalog')
+    assert.equal((await s.runJob(21)).state, 'done')
+    let jobId
+    onRead = async () => {
+      onRead = async () => {}
+      const r = await s.post('/api/fetch', { session_key: 21 })
+      assert.equal(r.status, 202)
+      jobId = (await r.json()).jobId
+    }
+    const res = await fetch(`${s.base}/api/preview?session_key=21`)
+    assert.equal(res.status, 409)
+    assert.match((await res.json()).error, /being fetched/)
+    for (;;) {
+      const j = await s.get(`/api/jobs/${jobId}`)
+      if (j.state !== 'running') { assert.equal(j.state, 'done', j.error); break }
+      await new Promise((r) => setTimeout(r, 10))
+    }
+    // a fetch of a different session during the read does not discard the preview
+    onRead = async () => { onRead = async () => {}; assert.equal((await s.post('/api/fetch', { session_key: 30 })).status, 202) }
+    assert.equal((await fetch(`${s.base}/api/preview?session_key=21`)).status, 200)
   } finally { s.close() }
 })

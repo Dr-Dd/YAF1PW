@@ -48,3 +48,14 @@ export function keepSelection(options, value) {
 export function canFetch(sessionKey, busy) {
   return sessionKey !== null && !busy
 }
+
+/**
+ * View data is enabled only for a selected, already downloaded session and no running job.
+ * @param {YearItem[]} catalog @param {number | null} year @param {number | null} meetingKey
+ * @param {number | null} sessionKey @param {boolean} busy
+ */
+export function canPreview(catalog, year, meetingKey, sessionKey, busy) {
+  if (sessionKey === null || busy) return false
+  const e = catalog.find((c) => c.year === year)?.events.find((x) => x.meeting_key === meetingKey)
+  return Boolean(e?.sessions.find((s) => s.session_key === sessionKey)?.cached)
+}

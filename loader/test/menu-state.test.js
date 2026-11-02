@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { canFetch, eventOptions, keepSelection, optionText, sessionOptions, yearOptions } from '../public/menu-state.js'
+import { canFetch, canPreview, eventOptions, keepSelection, optionText, sessionOptions, yearOptions } from '../public/menu-state.js'
 
 const sess = (key, abbr, cached) => ({ session_key: key, name: abbr, abbr, cached })
 const catalog = [
@@ -64,4 +64,13 @@ test('partial: some but not all sessions downloaded (events and years)', () => {
 
 test('optionText shows the partial marker', () => {
   assert.equal(optionText({ label: 'X', grey: true, partial: true }), '◐ X')
+})
+
+test('View data only for a selected, downloaded session and no running job', () => {
+  assert.equal(canPreview(catalog, 2025, 1, 2, false), true)
+  assert.equal(canPreview(catalog, 2025, 1, 2, true), false)
+  assert.equal(canPreview(catalog, 2025, 2, 3, false), false) // not downloaded
+  assert.equal(canPreview(catalog, 2025, 1, null, false), false)
+  assert.equal(canPreview(catalog, 2025, 2, 2, false), false) // session not in that event
+  assert.equal(canPreview([], 2025, 1, 2, false), false)
 })

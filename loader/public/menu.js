@@ -1,4 +1,4 @@
-import { canFetch, eventOptions, keepSelection, optionText, sessionOptions, yearOptions } from './menu-state.js'
+import { canFetch, canPreview, eventOptions, keepSelection, optionText, sessionOptions, yearOptions } from './menu-state.js'
 
 const $ = (/** @type {string} */ id) => document.getElementById(id)
 const yearEl = /** @type {HTMLSelectElement} */ ($('year'))
@@ -6,6 +6,8 @@ const eventEl = /** @type {HTMLSelectElement} */ ($('event'))
 const sessionEl = /** @type {HTMLSelectElement} */ ($('session'))
 const fetchEl = /** @type {HTMLButtonElement} */ ($('fetch'))
 const statusEl = /** @type {HTMLElement} */ ($('status'))
+const previewEl = /** @type {HTMLButtonElement} */ ($('preview'))
+const mainEl = /** @type {HTMLElement} */ (document.querySelector('main'))
 
 /** @type {import('./menu-state.js').YearItem[]} */
 let catalog = []
@@ -42,6 +44,7 @@ function render() {
   eventEl.disabled = sel.year === null
   sessionEl.disabled = sel.event === null
   fetchEl.disabled = !canFetch(sel.session, busy)
+  previewEl.disabled = !canPreview(catalog, sel.year, sel.event, sel.session, busy)
 }
 
 async function loadCatalog() {
@@ -88,6 +91,58 @@ fetchEl.addEventListener('click', async () => {
   } finally {
     busy = false
     try { await loadCatalog() } catch (e) { setStatus(`Error: ${e instanceof Error ? e.message : e}`, true) }
+  }
+})
+
+/** Create an element with text content (never HTML). @param {string} tag @param {string} [text] */
+function el(tag, text) {
+  const e = document.createElement(tag)
+  if (text !== undefined) e.textContent = text
+  return e
+}
+
+/** Cell text: null/undefined empty, objects and arrays as JSON. @param {any} v */
+const cellText = (v) => (v === null || v === undefined ? '' : typeof v === 'object' ? JSON.stringify(v) : String(v))
+
+/** Render a preview response into <main>. @param {any} p */
+function renderPreview(p) {
+  const meta = el('details')
+  meta.append(el('summary', 'session.json'), el('pre', JSON.stringify(p.meta, null, 2)))
+  const parts = [el('h2', `Data preview: ${p.dir}`), meta]
+  for (const t of p.tables) {
+    parts.push(el('h3', `${t.file}: ${t.total} rows (${t.rows.length} random)`))
+    const table = el('table')
+    const head = el('tr')
+    for (const c of t.columns) head.append(el('th', c))
+    const thead = el('thead')
+    const tbody = el('tbody')
+    thead.append(head)
+    for (const r of t.rows) {
+      const tr = el('tr')
+      for (const c of t.columns) tr.append(el('td', cellText(r[c])))
+      tbody.append(tr)
+    }
+    table.append(thead, tbody)
+    const wrap = el('div')
+    wrap.className = 'preview-table'
+    wrap.append(table)
+    parts.push(wrap)
+  }
+  mainEl.replaceChildren(...parts)
+}
+
+previewEl.addEventListener('click', async () => {
+  if (sel.session === null || busy) return
+  setStatus('Loading preview...')
+  try {
+    const res = await fetch(`/api/preview?session_key=${sel.session}&rows=10`)
+    const body = await res.json()
+    if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`)
+    renderPreview(body)
+    setStatus('')
+    setMenuOpen(false)
+  } catch (e) {
+    setStatus(`Error: ${e instanceof Error ? e.message : e}`, true)
   }
 })
 
