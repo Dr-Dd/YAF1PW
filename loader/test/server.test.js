@@ -8,6 +8,15 @@ import { createApp } from '../src/server.js'
 import { previewSession } from '../src/preview.js'
 import { mockFetch, NO_RESULTS, ok, tmp } from './helpers.js'
 
+/** Poll a job until it finishes; assert it ended 'done'. */
+async function waitJob(s, jobId) {
+  for (;;) {
+    const j = await s.get(`/api/jobs/${jobId}`)
+    if (j.state !== 'running') { assert.equal(j.state, 'done', j.error); return }
+    await new Promise((r) => setTimeout(r, 10))
+  }
+}
+
 const NOW = Date.parse('2025-06-01T00:00:00Z')
 const meetings = [
   { meeting_key: 2, meeting_name: 'Australian Grand Prix', date_start: '2025-03-14T00:00:00+00:00' },
@@ -144,11 +153,7 @@ test('unknown session -> 400; bad body -> 400; busy -> 409', async () => {
     assert.equal((await s.post('/api/fetch', { session_key: 30 })).status, 409)
     release()
     const { jobId } = await first.json()
-    for (;;) {
-      const j = await s.get(`/api/jobs/${jobId}`)
-      if (j.state !== 'running') { assert.equal(j.state, 'done', j.error); break }
-      await new Promise((r) => setTimeout(r, 10))
-    }
+    await waitJob(s, jobId)
     assert.equal((await s.post('/api/fetch', { session_key: 30 })).status, 202)
   } finally { release(); s.close() }
 })
@@ -218,6 +223,7 @@ test('preview: refused before download, random sample after, never fetches data'
     assert.equal(c1.total, 2)
     assert.deepEqual(c1.rows[0], car.rows[c1.rows[0]._row])
     assert.equal((await s.get('/api/preview?session_key=21&rows=0')).tables[1].rows.length, 1) // clamped to 1
+    assert.equal((await s.get('/api/preview?session_key=21&rows=')).tables[1].rows.length, 2) // empty = default 10 (all 2 rows)
 
     const { truncate } = await import('node:fs/promises')
     await truncate(join(s.dataDir, p.dir, 'laps.parquet'), 8)
@@ -255,11 +261,7 @@ test('preview: refused while that session is being re-fetched, other sessions un
     gated = false
     release()
     const { jobId } = await res.json()
-    for (;;) {
-      const j = await s.get(`/api/jobs/${jobId}`)
-      if (j.state !== 'running') { assert.equal(j.state, 'done', j.error); break }
-      await new Promise((r) => setTimeout(r, 10))
-    }
+    await waitJob(s, jobId)
     assert.equal((await fetch(`${s.base}/api/preview?session_key=21`)).status, 200)
   } finally { release(); s.close() }
 })
@@ -281,13 +283,16 @@ test('preview: discarded (409) if a fetch of that session starts while it is rea
     const res = await fetch(`${s.base}/api/preview?session_key=21`)
     assert.equal(res.status, 409)
     assert.match((await res.json()).error, /being fetched/)
-    for (;;) {
-      const j = await s.get(`/api/jobs/${jobId}`)
-      if (j.state !== 'running') { assert.equal(j.state, 'done', j.error); break }
-      await new Promise((r) => setTimeout(r, 10))
-    }
+    await waitJob(s, jobId)
     // a fetch of a different session during the read does not discard the preview
-    onRead = async () => { onRead = async () => {}; assert.equal((await s.post('/api/fetch', { session_key: 30 })).status, 202) }
+    let otherJobId
+    onRead = async () => {
+      onRead = async () => {}
+      const r = await s.post('/api/fetch', { session_key: 30 })
+      assert.equal(r.status, 202)
+      otherJobId = (await r.json()).jobId
+    }
     assert.equal((await fetch(`${s.base}/api/preview?session_key=21`)).status, 200)
+    await waitJob(s, otherJobId) // do not close the server while that fetch is still writing
   } finally { s.close() }
 })

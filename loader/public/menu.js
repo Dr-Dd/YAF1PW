@@ -12,6 +12,7 @@ const mainEl = /** @type {HTMLElement} */ (document.querySelector('main'))
 /** @type {import('./menu-state.js').YearItem[]} */
 let catalog = []
 let busy = false
+let previewing = false
 /** @type {{ year: number | null, event: number | null, session: number | null }} */
 const sel = { year: null, event: null, session: null }
 
@@ -44,7 +45,7 @@ function render() {
   eventEl.disabled = sel.year === null
   sessionEl.disabled = sel.event === null
   fetchEl.disabled = !canFetch(sel.session, busy)
-  previewEl.disabled = !canPreview(catalog, sel.year, sel.event, sel.session, busy)
+  previewEl.disabled = !canPreview(catalog, sel.year, sel.event, sel.session, busy || previewing)
 }
 
 async function loadCatalog() {
@@ -132,7 +133,9 @@ function renderPreview(p) {
 }
 
 previewEl.addEventListener('click', async () => {
-  if (sel.session === null || busy) return
+  if (sel.session === null || busy || previewing) return
+  previewing = true
+  render()
   setStatus('Loading preview...')
   try {
     const res = await fetch(`/api/preview?session_key=${sel.session}&rows=10`)
@@ -143,6 +146,9 @@ previewEl.addEventListener('click', async () => {
     setMenuOpen(false)
   } catch (e) {
     setStatus(`Error: ${e instanceof Error ? e.message : e}`, true)
+  } finally {
+    previewing = false
+    render()
   }
 })
 

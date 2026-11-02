@@ -103,7 +103,8 @@ export function createApp(o = {}) {
         const raw = url.searchParams.get('session_key')
         const sessionKey = raw === null || raw === '' ? NaN : Number(raw)
         if (!Number.isInteger(sessionKey)) return json(res, 400, { error: 'session_key required' })
-        const rowsParam = Number(url.searchParams.get('rows') ?? 10)
+        const rawRows = url.searchParams.get('rows')
+        const rowsParam = rawRows === null || rawRows === '' ? 10 : Number(rawRows)
         const n = Number.isInteger(rowsParam) ? Math.min(100, Math.max(1, rowsParam)) : 10
         if (!known.has(sessionKey)) await catalog()
         const target = known.get(sessionKey)
