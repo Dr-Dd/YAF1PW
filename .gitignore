@@ -1,45 +1,51 @@
-resources
-.review/
 SPEC.md
+.review/
 
-# Node / D3 front end
-node_modules/
-dist/
-build/
-.parcel-cache/
-.vite/
-.cache/
-npm-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-.npm/
-
-# Env / secrets
+# Secrets / env
 .env
 .env.*
+!.env.example
 
-# Editors / OS
-.vscode/
-.idea/
-*.swp
+# OS
 .DS_Store
 Thumbs.db
 
-# Downloaded OpenF1 data and request cache
-/data/
-loader/cache/
-
-# Added from default-template
-!.env.example
+# Editors
+.vscode/
+.idea/
+*.swp
 *~
+
+# Logs / temp
 *.log
 *.tmp
+.cache/
+
+# Dependencies / build
+node_modules/
 __pycache__/
 *.py[cod]
 .venv/
 venv/
+dist/
+build/
 coverage/
 
 # Pi-installed packages
 .pi/git/
 .pi/npm/
+
+# Project-specific (restored after default-template sync)
+resources
+
+# Node / D3 front end
+.parcel-cache/
+.vite/
+.npm/
+npm-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Downloaded OpenF1 data and request cache
+/data/
+loader/cache/
