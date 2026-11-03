@@ -1,10 +1,8 @@
 #!/usr/bin/env bash
 # Project check: the single command that must pass before a change is done.
 #
-# Configure it for this project: replace each `not_configured <name>` below
-# with the command that runs that step (for example `step test npm test`).
-# Delete steps that do not apply, or add others (build, format check, ...).
-# Until then the check fails on purpose.
+# Steps: test, typecheck and lint of the Node app in loader/.
+# Add other steps (build, format check, ...) as needed.
 #
 # In pi, the agent runs this through the `check` tool and needs your approval
 # to change this file (see .pi/extensions/check-guard.ts).
@@ -28,14 +26,9 @@ step() {
 	echo
 }
 
-not_configured() {
-	echo "check.sh: \"$1\" is not configured for this project" >&2
-	return 1
-}
-
-step test not_configured test
-step typecheck not_configured typecheck
-step lint not_configured lint
+step test npm --prefix loader test
+step typecheck npm --prefix loader run typecheck
+step lint npm --prefix loader run lint
 
 if ((${#failed[@]})); then
 	echo "check: FAILED (${failed[*]})"

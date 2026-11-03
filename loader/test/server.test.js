@@ -51,8 +51,8 @@ function route(url) {
 async function start(fetchFn, extra = {}) {
   const dataDir = await tmp()
   const { server } = createApp({ dataDir, cacheDir: await tmp(), fetchFn, now: () => NOW, minGapMs: 0, backoffMs: 0, ...extra })
-  await new Promise((r) => server.listen(0, '127.0.0.1', r))
-  const base = `http://127.0.0.1:${server.address().port}`
+  await new Promise((r) => server.listen(0, '127.0.0.1', () => r(undefined)))
+  const base = `http://127.0.0.1:${/** @type {import('node:net').AddressInfo} */ (server.address()).port}`
   const get = async (p) => (await fetch(base + p)).json()
   const post = (p, body) => fetch(base + p, { method: 'POST', body: JSON.stringify(body) })
   async function runJob(sessionKey) {
@@ -137,7 +137,7 @@ test('a damaged download is grey again (content check)', async () => {
 
 test('unknown session -> 400; bad body -> 400; busy -> 409', async () => {
   let release
-  const gate = new Promise((r) => { release = r })
+  const gate = new Promise((r) => { release = () => r(undefined) })
   const f = mockFetch(async (url) => {
     if (url.includes('/laps')) await gate
     return route(url)
@@ -244,7 +244,7 @@ test('preview: refused while that session is being re-fetched, other sessions un
   let gated = false
   let release = () => {}
   const f = mockFetch(async (url) => {
-    if (gated && url.includes('/laps')) await new Promise((r) => { release = r })
+    if (gated && url.includes('/laps')) await new Promise((r) => { release = () => r(undefined) })
     return route(url)
   })
   const s = await start(f)
@@ -268,7 +268,7 @@ test('preview: refused while that session is being re-fetched, other sessions un
 
 test('preview: discarded (409) if a fetch of that session starts while it is reading', async () => {
   let onRead = async () => {}
-  const previewFn = async (...a) => { await onRead(); return previewSession(...a) }
+  const previewFn = async (/** @type {Parameters<typeof previewSession>} */ ...a) => { await onRead(); return previewSession(...a) }
   const s = await start(mockFetch(route), { previewFn })
   try {
     await s.get('/api/catalog')

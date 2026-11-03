@@ -7,7 +7,8 @@ import { ENDPOINTS } from '../src/endpoints.js'
 
 const fixture = (n) => JSON.parse(readFileSync(new URL(`./fixtures/${n}.json`, import.meta.url), 'utf8'))
 
-const ep = (n) => ENDPOINTS.find((e) => e.name === n)
+/** Parquet endpoint by name (columns always declared). */
+const ep = (n) => /** @type {import('../src/endpoints.js').Endpoint & { columns: [string, string][] }} */ (ENDPOINTS.find((e) => e.name === n))
 const START = Date.parse('2025-05-18T13:00:00.000+00:00')
 
 test('parseMs handles +00:00 with and without microseconds', () => {
@@ -51,7 +52,7 @@ test('car_data round trip: values, nulls, sorting, types; timestamp not stored',
   assert.equal(byName.rpm.converted_type, 'INT_16')
   assert.equal(byName.throttle.converted_type, 'INT_8')
   assert.equal(byName.t.type, 'INT32')
-  assert.equal(meta.row_groups[0].columns[0].meta_data.codec, 'SNAPPY')
+  assert.equal(meta.row_groups[0].columns[0].meta_data?.codec, 'SNAPPY')
 })
 
 test('laps round trip with list columns, nulls and doubles', async () => {
@@ -78,7 +79,7 @@ test('laps round trip with list columns, nulls and doubles', async () => {
 })
 
 test('empty endpoint writes a schema-only file', async () => {
-  for (const e of ENDPOINTS.filter((x) => x.format === 'parquet')) {
+  for (const e of ENDPOINTS.filter((x) => x.format === 'parquet').map((x) => ep(x.name))) {
     const buf = buildParquet([], e.columns, e.timeField)
     assert.equal(Number(parquetMetadata(buf).num_rows), 0)
     const names = parquetMetadata(buf).schema.slice(1).map((s) => s.name)

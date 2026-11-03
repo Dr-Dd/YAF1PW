@@ -55,12 +55,13 @@ test('cached flags roll up: session -> event -> year', () => {
 // ---- content check ----
 const EXPECTED_EMPTY = Object.fromEntries(ENDPOINTS.map((e) => [e.file, 0]))
 
+/** @param {string} root @param {string} rel @param {{ corrupt?: string }} [opts] */
 async function writeSession(root, rel, { corrupt } = {}) {
   const dir = join(root, rel)
   await mkdir(dir, { recursive: true })
   for (const ep of ENDPOINTS) {
     if (ep.format === 'json') await writeFile(join(dir, ep.file), '[]')
-    else await writeFile(join(dir, ep.file), new Uint8Array(buildParquet([], ep.columns, ep.timeField)))
+    else await writeFile(join(dir, ep.file), new Uint8Array(buildParquet([], ep.columns ?? [], ep.timeField)))
   }
   await writeFile(join(dir, 'session.json'), JSON.stringify({ schema_version: 1, files: EXPECTED_EMPTY }))
   if (corrupt === 'missing') await (await import('node:fs/promises')).rm(join(dir, 'pit.json'))

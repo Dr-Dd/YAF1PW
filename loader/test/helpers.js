@@ -18,7 +18,7 @@ export function mockFetch(route) {
     }
   }
   fn.calls = calls
-  return fn
+  return /** @type {typeof fetch & { calls: any[] }} */ (/** @type {unknown} */ (fn))
 }
 
 export const NO_RESULTS = { status: 404, body: { detail: 'No results found.' } }
