@@ -240,6 +240,34 @@ test('View data button sits in the menu panel', async () => {
   } finally { s.close() }
 })
 
+test('layout: page is fixed to the viewport, only main scrolls', async () => {
+  const s = await start(mockFetch(route))
+  try {
+    const res = await fetch(s.base + '/menu.css')
+    assert.equal(res.status, 200)
+    const css = await res.text()
+    /** Declarations of the rule whose selector is exactly `sel` (empty if none). @param {string} sel */
+    const rule = (sel) => {
+      for (const m of css.matchAll(/([^{}]+)\{([^}]*)\}/g)) {
+        if (m[1].replace(/\/\*[\s\S]*?\*\//g, '').trim() === sel) return m[2]
+      }
+      return ''
+    }
+    const root = rule('html, body')
+    assert.match(root, /overflow:\s*hidden/)
+    assert.match(root, /height:\s*100dvh/)
+    assert.match(rule('body'), /display:\s*flex/)
+    assert.match(rule('body'), /flex-direction:\s*column/)
+    const main = rule('main')
+    assert.match(main, /overflow:\s*auto/)
+    assert.match(main, /min-height:\s*0/)
+    assert.doesNotMatch(rule('#topbar'), /position:\s*fixed/)
+    const panel = rule('#menu-panel')
+    assert.match(panel, /overflow:\s*auto/)
+    assert.match(panel, /max-height:/)
+  } finally { s.close() }
+})
+
 test('preview: refused while that session is being re-fetched, other sessions unaffected', async () => {
   let gated = false
   let release = () => {}
