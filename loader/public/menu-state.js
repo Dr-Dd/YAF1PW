@@ -59,3 +59,8 @@ export function canPreview(catalog, year, meetingKey, sessionKey, busy) {
   const e = catalog.find((c) => c.year === year)?.events.find((x) => x.meeting_key === meetingKey)
   return Boolean(e?.sessions.find((s) => s.session_key === sessionKey)?.cached)
 }
+
+/** True when the pointer is in the top-left quadrant of the viewport. @param {number} x @param {number} y @param {number} width @param {number} height */
+export function inHintZone(x, y, width, height) {
+  return x < width / 2 && y < height / 2
+}

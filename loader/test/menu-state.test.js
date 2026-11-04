@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { canFetch, canPreview, eventOptions, keepSelection, optionText, sessionOptions, yearOptions } from '../public/menu-state.js'
+import { canFetch, canPreview, eventOptions, inHintZone, keepSelection, optionText, sessionOptions, yearOptions } from '../public/menu-state.js'
 
 const sess = (key, abbr, cached) => ({ session_key: key, name: abbr, abbr, cached })
 const catalog = [
@@ -73,4 +73,14 @@ test('View data only for a selected, downloaded session and no running job', () 
   assert.equal(canPreview(catalog, 2025, 1, null, false), false)
   assert.equal(canPreview(catalog, 2025, 2, 2, false), false) // session not in that event
   assert.equal(canPreview([], 2025, 1, 2, false), false)
+})
+
+test('inHintZone: only the top-left quadrant', () => {
+  assert.equal(inHintZone(0, 0, 1000, 800), true)
+  assert.equal(inHintZone(499, 399, 1000, 800), true)
+  assert.equal(inHintZone(500, 100, 1000, 800), false)
+  assert.equal(inHintZone(100, 400, 1000, 800), false)
+  assert.equal(inHintZone(900, 700, 1000, 800), false)
+  assert.equal(inHintZone(900, 100, 1000, 800), false)
+  assert.equal(inHintZone(100, 700, 1000, 800), false)
 })

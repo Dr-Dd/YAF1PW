@@ -1,4 +1,4 @@
-import { canFetch, canPreview, eventOptions, keepSelection, optionText, sessionOptions, yearOptions } from './menu-state.js'
+import { canFetch, canPreview, eventOptions, inHintZone, keepSelection, optionText, sessionOptions, yearOptions } from './menu-state.js'
 
 const $ = (/** @type {string} */ id) => document.getElementById(id)
 const yearEl = /** @type {HTMLSelectElement} */ ($('year'))
@@ -168,6 +168,11 @@ document.addEventListener('click', (e) => {
   const t = /** @type {Node} */ (e.target)
   if (!panelEl.hidden && !panelEl.contains(t) && !toggleEl.contains(t)) setMenuOpen(false)
 })
+
+document.addEventListener('mousemove', (e) => {
+  document.body.classList.toggle('near-menu', inHintZone(e.clientX, e.clientY, window.innerWidth, window.innerHeight))
+})
+document.documentElement.addEventListener('mouseleave', () => document.body.classList.remove('near-menu'))
 
 setStatus('Loading catalog...')
 loadCatalog().then(() => setStatus('')).catch((e) => setStatus(`Error: ${e.message}`, true))
